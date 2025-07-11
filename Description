@@ -1,0 +1,20 @@
+
+**Project Title:**
+Multi-Timeframe Swing Trading Signal System
+
+**Description:**
+Developed a Pine Script-based swing trading signal engine designed to optimize entry accuracy through multi-timeframe trend confirmation, RSI filtering, and volume-profile-informed support/resistance mapping. This algorithm identifies high-confidence long/short opportunities by aligning 4H, daily, and weekly EMA trends, verifying RSI thresholds, and detecting price proximity to dynamic high-volume zones.
+
+Key features include:
+
+* Multi-timeframe trend validation (4H/1D/1W EMA crossover)
+* Volume-weighted support/resistance detection using rolling arrays
+* Signal generation based on RSI divergence from overbought/oversold regions
+* Smart daily trade limiter to prevent overtrading
+* Integrated alerts and in-chart signal visualization with contextual trend backgrounds
+
+Created as a solo quant research initiative to expand my trading strategy suite within my personal trading business. This tool enhances discretionary swing trading decisions with systematic, statistically-informed entry signals grounded in price structure and volume behavior.
+
+---
+
+Let me know if you’d like to bundle these projects under a common "Algorithmic Trading Suite" header for LinkedIn, or tailor one for GitHub with demo screenshots or further documentation.

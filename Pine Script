@@ -1,0 +1,237 @@
+
+
+//@version=6
+indicator("Swing Trading Signals", shorttitle="STS", overlay=true)
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 🔧 INPUT PARAMETERS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// EMA Settings
+ema_short = input.int(9, "Short EMA Length", minval=1, group="EMA Settings")
+ema_long = input.int(50, "Long EMA Length", minval=1, group="EMA Settings")
+
+// RSI Settings
+rsi_length = input.int(14, "RSI Length", minval=1, group="RSI Settings")
+rsi_oversold = input.int(30, "RSI Oversold Threshold", minval=10, maxval=50, group="RSI Settings")
+rsi_overbought = input.int(70, "RSI Overbought Threshold", minval=50, maxval=90, group="RSI Settings")
+
+// Volume Profile Settings
+volume_lookback = input.int(100, "Volume Lookback Period", minval=20, group="Volume Analysis")
+volume_threshold = input.float(1.5, "Volume Threshold Multiplier", minval=0.5, step=0.1, group="Volume Analysis")
+proximity_pips = input.int(20, "S/R Proximity (Pips)", minval=5, group="Volume Analysis")
+
+// Trade Management
+max_trades_per_day = input.int(1, "Max Trades Per Day", minval=1, maxval=5, group="Trade Management")
+
+// Optional ATR (for reference only)
+show_atr_info = input.bool(false, "Show ATR Info in Alerts", group="Optional")
+atr_length = input.int(14, "ATR Length", minval=1, group="Optional")
+atr_multiplier = input.float(2.0, "ATR Multiplier", minval=0.5, step=0.1, group="Optional")
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 📊 TECHNICAL INDICATORS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// EMAs for current timeframe (4H)
+ema9_4h = ta.ema(close, ema_short)
+ema50_4h = ta.ema(close, ema_long)
+
+// Multi-timeframe EMA data
+ema9_daily = request.security(syminfo.tickerid, "1D", ta.ema(close, ema_short))
+ema50_daily = request.security(syminfo.tickerid, "1D", ta.ema(close, ema_long))
+
+ema9_weekly = request.security(syminfo.tickerid, "1W", ta.ema(close, ema_short))
+ema50_weekly = request.security(syminfo.tickerid, "1W", ta.ema(close, ema_long))
+
+// RSI
+rsi = ta.rsi(close, rsi_length)
+
+// ATR (optional)
+atr = ta.atr(atr_length)
+
+// Volume analysis
+volume_sma = ta.sma(volume, volume_lookback)
+high_volume_bar = volume > volume_sma * volume_threshold
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 📈 TREND ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Trend determination for each timeframe
+bullish_4h = ema9_4h > ema50_4h
+bearish_4h = ema9_4h < ema50_4h
+
+bullish_daily = ema9_daily > ema50_daily
+bearish_daily = ema9_daily < ema50_daily
+
+bullish_weekly = ema9_weekly > ema50_weekly
+bearish_weekly = ema9_weekly < ema50_weekly
+
+// Multi-timeframe alignment
+all_bullish = bullish_4h and bullish_daily and bullish_weekly
+all_bearish = bearish_4h and bearish_daily and bearish_weekly
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 🎯 VOLUME-BASED SUPPORT/RESISTANCE
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Arrays to store S/R levels
+var float[] support_zones = array.new<float>()
+var float[] resistance_zones = array.new<float>()
+
+// Update S/R levels on high volume bars
+if high_volume_bar
+    // Add resistance level (high of high volume bar)
+    if array.size(resistance_zones) >= 20
+        array.shift(resistance_zones)
+    array.push(resistance_zones, high)
+    
+    // Add support level (low of high volume bar)
+    if array.size(support_zones) >= 20
+        array.shift(support_zones)
+    array.push(support_zones, low)
+
+// Function to check if price is near support
+near_support_zone() =>
+    pip_size = syminfo.mintick * 10
+    proximity_distance = proximity_pips * pip_size
+    is_near = false
+    
+    if array.size(support_zones) > 0
+        for i = 0 to array.size(support_zones) - 1
+            support_level = array.get(support_zones, i)
+            if math.abs(close - support_level) <= proximity_distance and close >= support_level * 0.999
+                is_near := true
+                break
+    is_near
+
+// Function to check if price is near resistance
+near_resistance_zone() =>
+    pip_size = syminfo.mintick * 10
+    proximity_distance = proximity_pips * pip_size
+    is_near = false
+    
+    if array.size(resistance_zones) > 0
+        for i = 0 to array.size(resistance_zones) - 1
+            resistance_level = array.get(resistance_zones, i)
+            if math.abs(close - resistance_level) <= proximity_distance and close <= resistance_level * 1.001
+                is_near := true
+                break
+    is_near
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 🚦 SIGNAL GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// EMA crossovers
+ema_bull_cross = ta.crossover(ema9_4h, ema50_4h)
+ema_bear_cross = ta.crossunder(ema9_4h, ema50_4h)
+
+// Complete signal conditions
+long_signal = ema_bull_cross and 
+              all_bullish and 
+              rsi > rsi_oversold and 
+              near_support_zone()
+
+short_signal = ema_bear_cross and 
+               all_bearish and 
+               rsi < rsi_overbought and 
+               near_resistance_zone()
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 📅 DAILY TRADE LIMIT
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+var int daily_trade_count = 0
+var int last_day = 0
+
+// Reset counter on new day
+if dayofmonth != dayofmonth[1]
+    daily_trade_count := 0
+
+// Check if we can take more trades
+can_trade_today = daily_trade_count < max_trades_per_day
+
+// Final confirmed signals
+confirmed_long = long_signal and can_trade_today
+confirmed_short = short_signal and can_trade_today
+
+// Update trade counter
+if confirmed_long or confirmed_short
+    daily_trade_count := daily_trade_count + 1
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 🎨 CHART VISUALIZATION
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Plot EMAs
+plot(ema9_4h, "EMA 9", color=color.blue, linewidth=2)
+plot(ema50_4h, "EMA 50", color=color.orange, linewidth=2)
+
+// Signal arrows
+plotshape(confirmed_long, 
+          title="Long Signal", 
+          location=location.belowbar, 
+          style=shape.triangleup, 
+          size=size.normal, 
+          color=color.lime)
+
+plotshape(confirmed_short, 
+          title="Short Signal", 
+          location=location.abovebar, 
+          style=shape.triangledown, 
+          size=size.normal, 
+          color=color.red)
+
+// Signal labels
+if confirmed_long
+    label.new(bar_index, low - (atr * 0.5), 
+              "LONG SIGNAL", 
+              style=label.style_label_up, 
+              color=color.green, 
+              textcolor=color.white, 
+              size=size.normal)
+
+if confirmed_short
+    label.new(bar_index, high + (atr * 0.5), 
+              "SHORT SIGNAL", 
+              style=label.style_label_down, 
+              color=color.red, 
+              textcolor=color.white, 
+              size=size.normal)
+
+// Background color for trend alignment
+bgcolor(all_bullish ? color.new(color.green, 97) : all_bearish ? color.new(color.red, 97) : na, title="Trend Alignment")
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 🚨 ALERT CONDITIONS
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Alert conditions with built-in messages
+alertcondition(confirmed_long, 
+               title="Long Signal Alert", 
+               message="🟢 LONG SIGNAL\nPair: {{ticker}}\nEntry: {{close}}\nTime: {{time}}")
+
+alertcondition(confirmed_short, 
+               title="Short Signal Alert", 
+               message="🔴 SHORT SIGNAL\nPair: {{ticker}}\nEntry: {{close}}\nTime: {{time}}")
+
+// Trend alignment alerts (optional)
+alertcondition(all_bullish and not all_bullish[1], 
+               title="Bullish Alignment", 
+               message="📈 BULLISH TREND ALIGNMENT - All timeframes aligned for longs")
+
+alertcondition(all_bearish and not all_bearish[1], 
+               title="Bearish Alignment", 
+               message="📉 BEARISH TREND ALIGNMENT - All timeframes aligned for shorts")
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// 📝 DEBUGGING INFO (COMMENT OUT IN PRODUCTION)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+// Uncomment these lines if you want to see condition states in the data window
+// plotchar(all_bullish, "All Bullish", "●", location.top, color=color.green, size=size.tiny)
+// plotchar(all_bearish, "All Bearish", "●", location.top, color=color.red, size=size.tiny)
+// plotchar(near_support_zone(), "Near Support", "S", location.bottom, color=color.blue, size=size.tiny)
+// plotchar(near_resistance_zone(), "Near Resistance", "R", location.top, color=color.purple, size=size.tiny)
